@@ -1,8 +1,9 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#include "layer.h"
 #include "tensor.h"
+#include "layer.h"
+#include "conv.h"
 
 typedef struct {
     Layer **layers; 

@@ -28,7 +28,7 @@ typedef struct {
     Tensor *input_cache; 
 } LinearLayer; 
 
-// Linear layer constructor/destructor
+// Linear layer constructors/destructors
 LinearLayer* layer_linear_create(size_t in_features, size_t out_features);
 void layer_linear_free(LinearLayer *self);
 
