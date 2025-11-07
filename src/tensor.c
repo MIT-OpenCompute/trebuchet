@@ -1,5 +1,5 @@
-#include "trebuchet/tensor.h"
-#include "trebuchet/autograd.h"
+#include "basednn/tensor.h"
+#include "basednn/autograd.h"
 #include <stdlib.h> 
 #include <stdio.h>
 #include <string.h>

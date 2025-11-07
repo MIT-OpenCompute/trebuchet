@@ -46,7 +46,7 @@ struct Optimizer {
     void *state;
 };
 
-// Layer optimizer constructors
+// Optimizer constructor/destructors. 
 Optimizer* optimizer_create(Network *net, OptimizerConfig config);
 
 // Optimizer operations

@@ -1,5 +1,5 @@
-#include "trebuchet/ops.h"
-#include "trebuchet/autograd.h"
+#include "basednn/ops.h"
+#include "basednn/autograd.h"
 #include <stdlib.h>
 #include <math.h>
 

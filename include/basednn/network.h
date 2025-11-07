@@ -9,7 +9,9 @@ typedef struct Network Network;
 
 struct Network {
     Layer **layers;
+    Tensor **parameters;
     size_t num_layers;
+    size_t num_parameters;
     size_t capacity;
 }; 
 

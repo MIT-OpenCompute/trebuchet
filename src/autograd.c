@@ -1,4 +1,4 @@
-#include "trebuchet/autograd.h"
+#include "basednn/autograd.h"
 #include <stdlib.h>
 
 // Tensor function gradients
@@ -77,13 +77,11 @@ void backward_matmul(Tensor *output) {
     
     if (A->ndim == 1 && B->ndim == 1) {
         if (A->requires_grad) {
-            // dL/dA = dL/dout * B (element-wise)
             for (size_t i = 0; i < A->size; i++) {
                 A->grad[i] += output->grad[0] * B->data[i];
             }
         }
         if (B->requires_grad) {
-            // dL/dB = dL/dout * A (element-wise)
             for (size_t i = 0; i < B->size; i++) {
                 B->grad[i] += output->grad[0] * A->data[i];
             }
@@ -92,7 +90,6 @@ void backward_matmul(Tensor *output) {
     
     else if (A->ndim == 2 && B->ndim == 1) {
         if (A->requires_grad) {
-            // dL/dA = dL/dout ⊗ B^T (outer product)
             for (size_t i = 0; i < A->shape[0]; i++) {
                 for (size_t j = 0; j < A->shape[1]; j++) {
                     A->grad[i * A->shape[1] + j] += output->grad[i] * B->data[j];
@@ -100,7 +97,6 @@ void backward_matmul(Tensor *output) {
             }
         }
         if (B->requires_grad) {
-            // dL/dB = A^T @ dL/dout
             for (size_t j = 0; j < B->shape[0]; j++) {
                 float acc = 0.0f;
                 for (size_t i = 0; i < A->shape[0]; i++) {
@@ -113,7 +109,6 @@ void backward_matmul(Tensor *output) {
     
     else if (A->ndim == 1 && B->ndim == 2) {
         if (A->requires_grad) {
-            // dL/dA = dL/dout @ B^T
             for (size_t i = 0; i < A->shape[0]; i++) {
                 float acc = 0.0f;
                 for (size_t j = 0; j < B->shape[1]; j++) {
@@ -123,7 +118,6 @@ void backward_matmul(Tensor *output) {
             }
         }
         if (B->requires_grad) {
-            // dL/dB = A^T ⊗ dL/dout (outer product)
             for (size_t i = 0; i < B->shape[0]; i++) {
                 for (size_t j = 0; j < B->shape[1]; j++) {
                     B->grad[i * B->shape[1] + j] += A->data[i] * output->grad[j];
@@ -134,7 +128,6 @@ void backward_matmul(Tensor *output) {
     
     else if (A->ndim == 2 && B->ndim == 2) {
         if (A->requires_grad) {
-            // dL/dA = dL/dout @ B^T
             for (size_t i = 0; i < A->shape[0]; i++) {
                 for (size_t j = 0; j < A->shape[1]; j++) {
                     float acc = 0.0f;
@@ -146,7 +139,6 @@ void backward_matmul(Tensor *output) {
             }
         }
         if (B->requires_grad) {
-            // dL/dB = A^T @ dL/dout
             for (size_t i = 0; i < B->shape[0]; i++) {
                 for (size_t j = 0; j < B->shape[1]; j++) {
                     float acc = 0.0f;
