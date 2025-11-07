@@ -1,5 +1,3 @@
-// TENSOR_H - Core tensor operations and autograd engine
-// No dependencies on other petard headers
 #ifndef TENSOR_H
 #define TENSOR_H
 

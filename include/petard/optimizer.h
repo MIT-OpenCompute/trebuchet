@@ -1,5 +1,3 @@
-// OPTIMIZER_H - Optimization algorithms (SGD, Adam, etc.)
-// Dependencies: tensor.h (forward declares Layer and Network to avoid circular deps)
 #ifndef OPTIMIZER_H
 #define OPTIMIZER_H
 

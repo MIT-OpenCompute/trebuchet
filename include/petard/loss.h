@@ -1,5 +1,3 @@
-// LOSS_H - Loss functions for training
-// Dependencies: tensor.h
 #ifndef LOSS_H
 #define LOSS_H
 

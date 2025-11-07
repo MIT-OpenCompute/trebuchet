@@ -1,18 +1,16 @@
-// NETWORK_H - Neural network container (Sequential-style)
-// Dependencies: tensor.h, layer.h
 #ifndef NETWORK_H
 #define NETWORK_H
 
 #include "tensor.h"
 #include "layer.h"
 
-typedef struct Network {
+typedef struct Network Network;
+
+struct Network {
     Layer **layers;
     size_t num_layers;
     size_t capacity;
-};
-
-typedef struct Network Network; 
+}; 
 
 // Network management
 Network* network_create();
