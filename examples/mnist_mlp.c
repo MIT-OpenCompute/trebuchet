@@ -1,4 +1,4 @@
-// AI Generated MNIST MLP Training Example - PyTorch-style API
+// AI MNIST MLP Training Example - PyTorch-style API
 // Demonstrates a complete training loop for MNIST digit classification
 // using a multi-layer perceptron with the Petard neural network library
 
