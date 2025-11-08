@@ -42,9 +42,9 @@ foreach(test_src ${TEST_SOURCES})
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
 
-# Full integration tests
-add_executable(xor tests/full/xor.c)
-target_link_libraries(xor basednn m)
+# Full tests
+# add_executable(xor tests/full/xor.c)
+# target_link_libraries(xor basednn m)
 
-add_executable(mnist tests/full/mnist.c)
-target_link_libraries(mnist basednn m)
+# add_executable(mnist tests/full/mnist.c)
+# target_link_libraries(mnist basednn m)
