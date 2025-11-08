@@ -1,5 +1,5 @@
-#include "basednn/tensor.h"
-#include "basednn/autograd.h"
+#include "lessbasednn/tensor.h"
+#include "lessbasednn/autograd.h"
 #include <stdlib.h> 
 #include <stdio.h>
 #include <string.h>

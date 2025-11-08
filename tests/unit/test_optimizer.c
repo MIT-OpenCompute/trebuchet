@@ -3,10 +3,10 @@
  * Tests SGD and Adam optimizers, parameter updates, and state management
  */
 
-#include "basednn/optimizer.h"
-#include "basednn/network.h"
-#include "basednn/layer.h"
-#include "basednn/tensor.h"
+#include "lessbasednn/optimizer.h"
+#include "lessbasednn/network.h"
+#include "lessbasednn/layer.h"
+#include "lessbasednn/tensor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

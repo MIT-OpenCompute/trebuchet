@@ -1,4 +1,4 @@
-#include "basednn/network.h"
+#include "lessbasednn/network.h"
 #include <stdio.h> 
 #include <stdlib.h>
 #include <string.h>

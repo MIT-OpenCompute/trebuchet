@@ -1,5 +1,5 @@
-#include "basednn/optimizer.h"
-#include "basednn/network.h"
+#include "lessbasednn/optimizer.h"
+#include "lessbasednn/network.h"
 #include <stdlib.h>
 #include <string.h> 
 #include <math.h> 

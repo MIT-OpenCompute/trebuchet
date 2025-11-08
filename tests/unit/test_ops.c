@@ -3,8 +3,8 @@
  * Tests tensor operations, activations, loss functions, and utilities
  */
 
-#include "basednn/ops.h"
-#include "basednn/tensor.h"
+#include "lessbasednn/ops.h"
+#include "lessbasednn/tensor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

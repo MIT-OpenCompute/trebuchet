@@ -3,9 +3,9 @@
  * Tests gradient computation for all operations and activation functions
  */
 
-#include "basednn/ops.h"
-#include "basednn/autograd.h"
-#include "basednn/tensor.h"
+#include "lessbasednn/ops.h"
+#include "lessbasednn/autograd.h"
+#include "lessbasednn/tensor.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>

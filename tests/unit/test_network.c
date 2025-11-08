@@ -3,11 +3,11 @@
  * Tests network creation, layer management, forward pass, training, and utilities
  */
 
-#include "basednn/network.h"
-#include "basednn/layer.h"
-#include "basednn/optimizer.h"
-#include "basednn/tensor.h"
-#include "basednn/ops.h"
+#include "lessbasednn/network.h"
+#include "lessbasednn/layer.h"
+#include "lessbasednn/optimizer.h"
+#include "lessbasednn/tensor.h"
+#include "lessbasednn/ops.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
