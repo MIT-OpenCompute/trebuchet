@@ -84,7 +84,7 @@ int main() {
     test_labels->shape[0] = n_test;
     
     printf("\nTraining on %d samples...\n", n_train);
-    network_train(net, opt, train_images, train_labels, 15, 64, LOSS_CROSS_ENTROPY, 1);
+    network_train(net, opt, train_images, train_labels, 3, 64, LOSS_CROSS_ENTROPY, 1);
     
     printf("\nEvaluating...\n");
     Tensor *predictions = network_forward(net, test_images);
