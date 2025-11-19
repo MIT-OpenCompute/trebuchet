@@ -22,6 +22,9 @@ typedef struct {
 
 static PipelineCache add_pipeline_cache = {0};
 static PipelineCache matmul_pipeline_cache = {0};
+static PipelineCache relu_pipeline_cache = {0};
+static PipelineCache sigmoid_pipeline_cache = {0};
+static PipelineCache tanh_pipeline_cache = {0};
 
 // ====================================================
 // Shader Source (embedded)
@@ -591,6 +594,279 @@ Tensor* wgpu_tensor_matmul(Tensor *A, Tensor *B) {
 }
 
 // ====================================================
+// Activation Functions (element-wise, simple shaders)
+// ====================================================
+
+// Shared unary operation shader template (ReLU, Sigmoid, Tanh)
+static Tensor* wgpu_unary_op(Tensor *input, const char *op_name, const char *shader_code) {
+    if (!wgpu_available() || !input) return NULL;
+    
+    size_t size = input->size;
+    size_t buffer_size = size * sizeof(float);
+    
+    WGPUBuffer buffer_in = wgpu_create_buffer(buffer_size, 
+        WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    WGPUBuffer buffer_out = wgpu_create_buffer(buffer_size, 
+        WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+    WGPUBuffer staging_buffer = wgpu_create_buffer(buffer_size,
+        WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead);
+    
+    if (!buffer_in || !buffer_out || !staging_buffer) {
+        if (buffer_in) wgpuBufferRelease(buffer_in);
+        if (buffer_out) wgpuBufferRelease(buffer_out);
+        if (staging_buffer) wgpuBufferRelease(staging_buffer);
+        return NULL;
+    }
+    
+    wgpu_write_buffer(buffer_in, 0, input->data, buffer_size);
+    
+    // Create shader module
+    WGPUShaderModuleWGSLDescriptor wgsl_desc = {
+        .chain = {.sType = WGPUSType_ShaderModuleWGSLDescriptor},
+        .code = shader_code,
+    };
+    WGPUShaderModuleDescriptor shader_desc = {
+        .nextInChain = (const WGPUChainedStruct*)&wgsl_desc,
+    };
+    WGPUShaderModule shader = wgpuDeviceCreateShaderModule(wgpu_get_device(), &shader_desc);
+    
+    // Create bind group layout
+    WGPUBindGroupLayoutEntry layout_entries[2] = {
+        {.binding = 0, .visibility = WGPUShaderStage_Compute, 
+         .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
+        {.binding = 1, .visibility = WGPUShaderStage_Compute, 
+         .buffer = {.type = WGPUBufferBindingType_Storage}},
+    };
+    WGPUBindGroupLayoutDescriptor bgl_desc = {.entryCount = 2, .entries = layout_entries};
+    WGPUBindGroupLayout bind_group_layout = wgpuDeviceCreateBindGroupLayout(wgpu_get_device(), &bgl_desc);
+    
+    // Create pipeline
+    WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
+        .bindGroupLayoutCount = 1, .bindGroupLayouts = &bind_group_layout};
+    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(wgpu_get_device(), &pipeline_layout_desc);
+    
+    WGPUComputePipelineDescriptor pipeline_desc = {
+        .layout = pipeline_layout,
+        .compute = {.module = shader, .entryPoint = "main"},
+    };
+    WGPUComputePipeline pipeline = wgpuDeviceCreateComputePipeline(wgpu_get_device(), &pipeline_desc);
+    
+    // Create bind group
+    WGPUBindGroupEntry bind_entries[2] = {
+        {.binding = 0, .buffer = buffer_in, .size = buffer_size},
+        {.binding = 1, .buffer = buffer_out, .size = buffer_size},
+    };
+    WGPUBindGroupDescriptor bind_group_desc = {
+        .layout = bind_group_layout, .entryCount = 2, .entries = bind_entries};
+    WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(wgpu_get_device(), &bind_group_desc);
+    
+    // Encode and dispatch
+    WGPUCommandEncoderDescriptor encoder_desc = {0};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(wgpu_get_device(), &encoder_desc);
+    WGPUComputePassDescriptor pass_desc = {0};
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+    
+    wgpuComputePassEncoderSetPipeline(pass, pipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, NULL);
+    
+    uint32_t total_workgroups = (size + 255) / 256;
+    uint32_t workgroups_x = total_workgroups <= 65535 ? total_workgroups : 65535;
+    uint32_t workgroups_y = total_workgroups <= 65535 ? 1 : (total_workgroups + 65534) / 65535;
+    
+    wgpuComputePassEncoderDispatchWorkgroups(pass, workgroups_x, workgroups_y, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, buffer_out, 0, staging_buffer, 0, buffer_size);
+    
+    WGPUCommandBufferDescriptor cmd_buffer_desc = {0};
+    WGPUCommandBuffer cmd_buffer = wgpuCommandEncoderFinish(encoder, &cmd_buffer_desc);
+    wgpuQueueSubmit(wgpu_get_queue(), 1, &cmd_buffer);
+    
+    // Poll for completion
+    for (int i = 0; i < 10000; i++) {
+        wgpuDevicePoll(wgpu_get_device(), 0, NULL);
+        for (volatile int j = 0; j < 1000; j++);
+    }
+    
+    // Read results
+    Tensor *output = tensor_create(input->shape, input->ndim);
+    if (output && wgpu_read_buffer(staging_buffer, 0, output->data, buffer_size) == 0) {
+        // Setup autograd
+        if (input->requires_grad) {
+            output->requires_grad = 1;
+            output->op_name = op_name;
+            output->num_inputs = 1;
+            output->inputs = malloc(sizeof(Tensor*));
+            output->inputs[0] = input;
+            output->backward_fn = get_tensor_op_backward_fn(op_name);
+        }
+    }
+    
+    // Cleanup
+    wgpuBufferRelease(buffer_in);
+    wgpuBufferRelease(buffer_out);
+    wgpuBufferRelease(staging_buffer);
+    wgpuBindGroupRelease(bind_group);
+    wgpuComputePassEncoderRelease(pass);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuCommandBufferRelease(cmd_buffer);
+    wgpuComputePipelineRelease(pipeline);
+    wgpuPipelineLayoutRelease(pipeline_layout);
+    wgpuBindGroupLayoutRelease(bind_group_layout);
+    wgpuShaderModuleRelease(shader);
+    
+    return output;
+}
+
+// ReLU with cached pipeline
+Tensor* wgpu_tensor_relu(Tensor *input) {
+    if (!wgpu_available() || !input) return NULL;
+    
+    size_t size = input->size;
+    
+    // For small tensors (< 1M elements), GPU overhead exceeds benefit - use CPU
+    if (size < 1000000) return NULL;
+    size_t buffer_size = size * sizeof(float);
+    
+    // Create buffers
+    WGPUBuffer buffer_in = wgpu_create_buffer(buffer_size, 
+        WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    WGPUBuffer buffer_out = wgpu_create_buffer(buffer_size, 
+        WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+    WGPUBuffer staging_buffer = wgpu_create_buffer(buffer_size,
+        WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead);
+    
+    if (!buffer_in || !buffer_out || !staging_buffer) {
+        if (buffer_in) wgpuBufferRelease(buffer_in);
+        if (buffer_out) wgpuBufferRelease(buffer_out);
+        if (staging_buffer) wgpuBufferRelease(staging_buffer);
+        return NULL;
+    }
+    
+    wgpu_write_buffer(buffer_in, 0, input->data, buffer_size);
+    
+    // Initialize pipeline cache on first use
+    if (!relu_pipeline_cache.initialized) {
+        static const char* shader_code = 
+            "@group(0) @binding(0) var<storage, read> input: array<f32>;\n"
+            "@group(0) @binding(1) var<storage, read_write> output: array<f32>;\n"
+            "@compute @workgroup_size(256)\n"
+            "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
+            "    let threads_per_row = 65535u * 256u;\n"
+            "    let index = global_id.y * threads_per_row + global_id.x;\n"
+            "    if (index < arrayLength(&output)) {\n"
+            "        output[index] = max(input[index], 0.0);\n"
+            "    }\n"
+            "}\n";
+        
+        WGPUShaderModuleWGSLDescriptor wgsl_desc = {
+            .chain = {.sType = WGPUSType_ShaderModuleWGSLDescriptor},
+            .code = shader_code,
+        };
+        WGPUShaderModuleDescriptor shader_desc = {
+            .nextInChain = (const WGPUChainedStruct*)&wgsl_desc,
+        };
+        relu_pipeline_cache.shader = wgpuDeviceCreateShaderModule(wgpu_get_device(), &shader_desc);
+        
+        WGPUBindGroupLayoutEntry layout_entries[2] = {
+            {.binding = 0, .visibility = WGPUShaderStage_Compute, 
+             .buffer = {.type = WGPUBufferBindingType_ReadOnlyStorage}},
+            {.binding = 1, .visibility = WGPUShaderStage_Compute, 
+             .buffer = {.type = WGPUBufferBindingType_Storage}},
+        };
+        WGPUBindGroupLayoutDescriptor bgl_desc = {.entryCount = 2, .entries = layout_entries};
+        relu_pipeline_cache.bind_group_layout = wgpuDeviceCreateBindGroupLayout(wgpu_get_device(), &bgl_desc);
+        
+        WGPUPipelineLayoutDescriptor pipeline_layout_desc = {
+            .bindGroupLayoutCount = 1, .bindGroupLayouts = &relu_pipeline_cache.bind_group_layout};
+        relu_pipeline_cache.pipeline_layout = wgpuDeviceCreatePipelineLayout(wgpu_get_device(), &pipeline_layout_desc);
+        
+        WGPUComputePipelineDescriptor pipeline_desc = {
+            .layout = relu_pipeline_cache.pipeline_layout,
+            .compute = {.module = relu_pipeline_cache.shader, .entryPoint = "main"},
+        };
+        relu_pipeline_cache.pipeline = wgpuDeviceCreateComputePipeline(wgpu_get_device(), &pipeline_desc);
+        relu_pipeline_cache.initialized = 1;
+    }
+    
+    // Create bind group (per-operation)
+    WGPUBindGroupEntry bind_entries[2] = {
+        {.binding = 0, .buffer = buffer_in, .size = buffer_size},
+        {.binding = 1, .buffer = buffer_out, .size = buffer_size},
+    };
+    WGPUBindGroupDescriptor bind_group_desc = {
+        .layout = relu_pipeline_cache.bind_group_layout, .entryCount = 2, .entries = bind_entries};
+    WGPUBindGroup bind_group = wgpuDeviceCreateBindGroup(wgpu_get_device(), &bind_group_desc);
+    
+    // Encode and dispatch
+    WGPUCommandEncoderDescriptor encoder_desc = {0};
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(wgpu_get_device(), &encoder_desc);
+    WGPUComputePassDescriptor pass_desc = {0};
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &pass_desc);
+    
+    wgpuComputePassEncoderSetPipeline(pass, relu_pipeline_cache.pipeline);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, bind_group, 0, NULL);
+    
+    uint32_t total_workgroups = (size + 255) / 256;
+    uint32_t workgroups_x = total_workgroups <= 65535 ? total_workgroups : 65535;
+    uint32_t workgroups_y = total_workgroups <= 65535 ? 1 : (total_workgroups + 65534) / 65535;
+    
+    wgpuComputePassEncoderDispatchWorkgroups(pass, workgroups_x, workgroups_y, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuCommandEncoderCopyBufferToBuffer(encoder, buffer_out, 0, staging_buffer, 0, buffer_size);
+    
+    WGPUCommandBufferDescriptor cmd_buffer_desc = {0};
+    WGPUCommandBuffer cmd_buffer = wgpuCommandEncoderFinish(encoder, &cmd_buffer_desc);
+    wgpuQueueSubmit(wgpu_get_queue(), 1, &cmd_buffer);
+    
+    // Poll for completion
+    for (int i = 0; i < 10000; i++) {
+        wgpuDevicePoll(wgpu_get_device(), 0, NULL);
+        for (volatile int j = 0; j < 1000; j++);
+    }
+    
+    // Read results
+    Tensor *output = tensor_create(input->shape, input->ndim);
+    if (output && wgpu_read_buffer(staging_buffer, 0, output->data, buffer_size) == 0) {
+        if (input->requires_grad) {
+            output->requires_grad = 1;
+            output->op_name = "relu";
+            output->num_inputs = 1;
+            output->inputs = malloc(sizeof(Tensor*));
+            output->inputs[0] = input;
+            output->backward_fn = get_tensor_op_backward_fn("relu");
+        }
+    }
+    
+    // Cleanup
+    wgpuBufferRelease(buffer_in);
+    wgpuBufferRelease(buffer_out);
+    wgpuBufferRelease(staging_buffer);
+    wgpuBindGroupRelease(bind_group);
+    wgpuComputePassEncoderRelease(pass);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuCommandBufferRelease(cmd_buffer);
+    
+    return output;
+}
+
+// Sigmoid and Tanh - keep simple for now, can be optimized later
+Tensor* wgpu_tensor_sigmoid(Tensor *input) {
+    // For now, use CPU - activation functions are bandwidth-bound anyway
+    return NULL;
+}
+
+Tensor* wgpu_tensor_tanh(Tensor *input) {
+    // For now, use CPU - activation functions are bandwidth-bound anyway
+    return NULL;
+}
+
+Tensor* wgpu_tensor_softmax(Tensor *input) {
+    // Softmax requires row-wise operations, keep on CPU for now
+    // TODO: Implement efficient GPU softmax with workgroup reductions
+    return NULL;  // Falls back to CPU
+}
+
+// ====================================================
 // Pipeline Cache Cleanup
 // ====================================================
 
@@ -610,6 +886,14 @@ void wgpu_cleanup_pipeline_caches(void) {
         wgpuShaderModuleRelease(matmul_pipeline_cache.shader);
         matmul_pipeline_cache.initialized = 0;
     }
+    
+    if (relu_pipeline_cache.initialized) {
+        wgpuComputePipelineRelease(relu_pipeline_cache.pipeline);
+        wgpuPipelineLayoutRelease(relu_pipeline_cache.pipeline_layout);
+        wgpuBindGroupLayoutRelease(relu_pipeline_cache.bind_group_layout);
+        wgpuShaderModuleRelease(relu_pipeline_cache.shader);
+        relu_pipeline_cache.initialized = 0;
+    }
 }
 
 // ====================================================
@@ -624,6 +908,10 @@ void wgpu_register_ops(void) {
     // Register GPU implementations with high priority
     register_operation_backend("add", (void*)wgpu_tensor_add, 10);
     register_operation_backend("matmul", (void*)wgpu_tensor_matmul, 10);
+    register_operation_backend("relu", (void*)wgpu_tensor_relu, 10);
+    register_operation_backend("sigmoid", (void*)wgpu_tensor_sigmoid, 10);
+    register_operation_backend("tanh", (void*)wgpu_tensor_tanh, 10);
+    register_operation_backend("softmax", (void*)wgpu_tensor_softmax, 10);
 }
 
 // ====================================================

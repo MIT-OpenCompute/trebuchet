@@ -408,6 +408,13 @@ void backward_transpose2d(Tensor *C) {
 Tensor* tensor_relu(Tensor *Z) {
     if (!Z) return NULL;
 
+    // Check for backend implementation
+    OpFn backend_fn = get_operation_fn("relu");
+    if (backend_fn) {
+        Tensor* result = ((Tensor* (*)(Tensor*))backend_fn)(Z);
+        if (result) return result;
+    }
+
     Tensor *A = tensor_create(Z->shape, Z->ndim); 
     if (!A) return NULL; 
 
@@ -422,6 +429,13 @@ Tensor* tensor_relu(Tensor *Z) {
 
 Tensor* tensor_sigmoid(Tensor *Z) {
     if (!Z) return NULL;
+
+    // Check for backend implementation
+    OpFn backend_fn = get_operation_fn("sigmoid");
+    if (backend_fn) {
+        Tensor* result = ((Tensor* (*)(Tensor*))backend_fn)(Z);
+        if (result) return result;
+    }
 
     Tensor *A = tensor_create(Z->shape, Z->ndim);
     if (!A) return NULL;
@@ -448,6 +462,13 @@ void backward_relu(Tensor *A) {
 
 Tensor* tensor_tanh(Tensor *Z) {
     if (!Z) return NULL;
+
+    // Check for backend implementation
+    OpFn backend_fn = get_operation_fn("tanh");
+    if (backend_fn) {
+        Tensor* result = ((Tensor* (*)(Tensor*))backend_fn)(Z);
+        if (result) return result;
+    }
 
     Tensor *A = tensor_create(Z->shape, Z->ndim);
     if (!A) return NULL;
@@ -487,6 +508,13 @@ void backward_sigmoid(Tensor *A) {
 
 Tensor* tensor_softmax(Tensor *Z) {
     if (!Z) return NULL;
+
+    // Check for backend implementation
+    OpFn backend_fn = get_operation_fn("softmax");
+    if (backend_fn) {
+        Tensor* result = ((Tensor* (*)(Tensor*))backend_fn)(Z);
+        if (result) return result;
+    }
 
     Tensor *A = tensor_create(Z->shape, Z->ndim);
     if (!A) return NULL; 

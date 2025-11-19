@@ -96,6 +96,12 @@ target_link_libraries(xor basednn m)
 add_executable(mnist core/tests/full/mnist.c)
 target_link_libraries(mnist basednn m)
 
+# Enable GPU support for mnist if WGPU is available
+if(ENABLE_WGPU)
+    target_include_directories(mnist PRIVATE ${WGPU_DIR}/include backend/wgpu)
+    target_compile_definitions(mnist PRIVATE HAS_WGPU)
+endif()
+
 # GPU unit tests
 if(ENABLE_WGPU)
     set(WGPU_TEST_SOURCES

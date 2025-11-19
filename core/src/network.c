@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <sys/time.h>
 
 #define INITIAL_CAPACITY 8
 
@@ -88,7 +89,13 @@ void network_train(Network *net, Optimizer *opt,  Tensor *input, Tensor *target,
     size_t num_batches = (num_samples + batch_size - 1) / batch_size; 
 
     for (size_t epoch = 0; epoch < epochs; epoch++) {
-        float total_loss = 0.0f; 
+        float total_loss = 0.0f;
+        
+        #ifdef HAS_WGPU
+        struct timeval tv_start, tv_end;
+        gettimeofday(&tv_start, NULL);
+        double forward_time = 0, backward_time = 0, optimizer_time = 0;
+        #endif
 
         for (size_t batch = 0; batch < num_batches; batch++) {
             size_t start = batch * batch_size; 
@@ -103,12 +110,21 @@ void network_train(Network *net, Optimizer *opt,  Tensor *input, Tensor *target,
                 continue; 
             }
 
+            #ifdef HAS_WGPU
+            struct timeval t1, t2, t3, t4;
+            gettimeofday(&t1, NULL);
+            #endif
+            
             Tensor *predictions = network_forward(net, batch_input);
             if (!predictions) {
                 tensor_free(batch_input);
                 tensor_free(batch_target);
                 continue; 
             }
+
+            #ifdef HAS_WGPU
+            gettimeofday(&t2, NULL);
+            #endif
 
             LossFn loss_fn = get_loss_fn(loss_name);
             if (!loss_fn) {
@@ -124,10 +140,27 @@ void network_train(Network *net, Optimizer *opt,  Tensor *input, Tensor *target,
                 float loss = loss_tensor->data[0]; 
                 total_loss += loss;
 
-                network_zero_grad(net); 
-                tensor_backward(loss_tensor); 
+                network_zero_grad(net);
+                
+                #ifdef HAS_WGPU
+                gettimeofday(&t3, NULL);
+                #endif
+                
+                tensor_backward(loss_tensor);
+                
+                #ifdef HAS_WGPU
+                gettimeofday(&t4, NULL);
+                forward_time += (t2.tv_sec - t1.tv_sec) * 1000.0 + (t2.tv_usec - t1.tv_usec) / 1000.0;
+                backward_time += (t4.tv_sec - t3.tv_sec) * 1000.0 + (t4.tv_usec - t3.tv_usec) / 1000.0;
+                #endif
 
                 optimizer_step(opt);
+                
+                #ifdef HAS_WGPU
+                struct timeval t5;
+                gettimeofday(&t5, NULL);
+                optimizer_time += (t5.tv_sec - t4.tv_sec) * 1000.0 + (t5.tv_usec - t4.tv_usec) / 1000.0;
+                #endif
 
                 tensor_free(loss_tensor);
             }
@@ -137,7 +170,19 @@ void network_train(Network *net, Optimizer *opt,  Tensor *input, Tensor *target,
             tensor_free(predictions);
         }
 
+        #ifdef HAS_WGPU
+        gettimeofday(&tv_end, NULL);
+        double epoch_time = (tv_end.tv_sec - tv_start.tv_sec) * 1000.0 + 
+                           (tv_end.tv_usec - tv_start.tv_usec) / 1000.0;
+        double samples_per_sec = num_samples / (epoch_time / 1000.0);
+        if (verbose) {
+            printf("Epoch %zu/%zu, Loss: %.6f (%.0f ms total: fwd=%.0f, bwd=%.0f, opt=%.0f | %.1f samples/sec)\n", 
+                   epoch + 1, epochs, total_loss / num_batches, epoch_time,
+                   forward_time, backward_time, optimizer_time, samples_per_sec);
+        }
+        #else
         if (verbose) printf("Epoch %zu/%zu, Loss: %.6f\n", epoch + 1, epochs, total_loss / num_batches);
+        #endif
     }
 }
 
